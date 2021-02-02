@@ -749,7 +749,9 @@ Example:
         <id>virtualization_host_kvm</id>
         <!-- partitioning override -->
         <partitioning>
-          <proposal_lvm config:type="boolean">true</proposal_lvm>
+          <proposal>
+            <lvm config:type="boolean">true</lvm>
+          </proposal>
         </partitioning>
         <!-- software override -->
         <software>
@@ -813,184 +815,198 @@ is done by specifying *service* with its *name* as seen in the example.
 
 ### Partitioning
 
-> **Note:** this section describes the format implemented by yast2-storage
-> and is usually referred to as "legacy format" by yast2-storage-ng. Products using
-> yast2-storage-ng also support a more powerful and flexible specification for
-> the `<partitioning>` section. That new format is currently documented [in this
-> file](https://github.com/yast/yast-storage-ng/blob/master/doc/old_and_new_proposal.md).
+The `partitioning` section contains settings used to define how the local
+storage system should be configured. On its more external level it contains just
+one setting:
 
-*proposal_settings_editable* (boolean, default _true_) specifies if the user
-should be able to change the configuration of the storage proposal in the
-installer: What filesystem to use for the root partition, if there should be a
-separate /home partition, if LVM or encryption should be used. For some
-products this is not desired.
+  * `expert_partitioner_warning`
+    If `true`, an extra warning pop-up is displayed if the user enters the
+    expert partitioner during installation.
 
-*expert_partitioner_warning* (boolean, default _false_) specifies if there
-should be an extra warning pop-up dialog when the user enters the expert
-partitioner dialog during installation, for example because the product has
-special requirements for partitioning (Btrfs to support snapshots etc.).
+In addition to that, there are two subsections: `proposal` and `volumes`.
 
-*home_path* (string) is the path (mount point) for the home
-partition or volume, if any is created (depending on *try_separate_home*,
-*limit_try_home* and available disk space).
+#### The `proposal` subsection
 
-By default, this is "/home". This can be set to another value like "/data", in
-which case the same partitioning proposal logic (including the other _home_
-parameters in this control.xml file) will be used as for "/home", just for
-"/data" as the mount point, and "/home" will be on the root filesystem again
-(with its own subvolume if Btrfs is used). Notice that you cannot have both a
-separate "/home" and a separate "/data" with this mechanism.
+The `proposal` subsection is used to configure some general aspects of the
+storage proposal (referenced as "guided setup" in the UI). In order to fully
+understand this section and its implications is important to have read and
+understood the section titled "How the proposal distributes the space" in the
+[proposal
+document](https://github.com/yast/yast-storage-ng/blob/master/doc/old_and_new_proposal.md)
+at the yast-storage-ng repository.
 
-**NOTICE:**
-
-_This "home_path" parameter is a hack, introduced to make a feature possible
-against all odds at the very latest stages of CaaSP 1.0 development without
-breaking the entire storage proposal logic._
-
-It is strongly advised not to use this in general. This documentation only
-exists for the sake of completeness, not as an encouragement to use this
-parameter.
-
-Please contact the YaST team if you feel you need this.
+This subsection contains the following options.
 
 
+  * `lvm`
+    Whether LVM should be used by default.
+  * `separate_vgs`
+    Whether every volume specifying a separate_vg_name should be created as
+    isolated LVM Volume Group instead include them in the "system" group.
+  * `allocate_volume_mode`
+    When set to `auto`, the proposal expects a set of candidate disks in which it
+    will distribute the volumes automatically as needed. If set to `device`, the
+    proposal needs to know in which disk must place each volume. As a
+    consequence, the interface presented to the user by default will be
+    different (containing different questions) depending of the value of this
+    property.
+  * `multidisk_first`
+    When set to `true`, the initial proposal considers all disks as possible
+    destination for the volumes to allocate. If set to `false`, the proposal
+    tries to use individual disks to allocate the volumes, and it only uses all
+    disks together when the volumes cannot be allocated in any individual disk.
+  * `delete_resize_configurable`
+    Whether the user can modify the options related to delete or resize partitions.
+    When this option is set to `false`, the user cannot change the value of
+    `windows_delete_mode`, `linux_delete_mode`, `other_delete_mode` and `resize_windows`.
+  * `windows_delete_mode`
+    Default value for the automatic delete mode for
+    Windows partitions. It can be `none`, `all` or `ondemand`. For more
+    information, see the description of the new proposal above.
+  * `linux_delete_mode`
+    Default value for the automatic delete mode for
+    Linux partitions. Again, it can be `none`, `all` or `ondemand`.
+  * `other_delete_mode`
+    Default value for the automatic delete mode for
+    other partitions. Once again, it can be `none`, `all` or `ondemand`.
+  * `resize_windows`
+    Default value for the user setting deciding whether to
+    resize Windows systems if needed.
+  * `lvm_vg_strategy`
+    If the user decides to use LVM, strategy to decide the
+    size of the volume group (and, thus, the number and size of created physical
+    volumes). There are three possible values.
+    * `use_available`
+      The VG will be created to use all the available space,
+      thus the VG size could be greater than the sum of LVs sizes.
+    * `use_needed`
+      The created VG will match the requirements 1:1, so its size
+      will be exactly the sum of all the LVs sizes.
+    * `use_vg_size` **FIXME: this is not implemented so far**
+      The VG will have exactly the size specified in `lvm_vg_size`.
+  * `lvm_vg_size` **FIXME: this is not implemented so far**
+    Specifies the predefined size of the LVM volume group if `lvm_vg_strategy` is `use_vg_size`.
 
-#### Subvolumes
+#### The `volumes` subsection
 
-This section is used to specify what subvolumes should be created if Btrfs is
-used for the root filesystem.
+The `volumes` subsection is responsible of specifying the partitions (or logical
+volumes if LVM is chosen) to create during the proposal and also the behavior of
+the expert partitioner regarding them.
 
-The *subvolumes* section is optional. If it is missing, a hard-coded list of
-default subvolumes is used. If the *subvolumes* section is there, but empty, no
-subvolumes are created.
+It is a collection of `volume` subsections, each of them with the options listed
+here. Having read the document mentioned above about the proposal behavior may
+be important to fully understand some of them.
 
-Each *subvolume* section has a mandatory *path* and optional *copy_on_write*
-and *archs* elements.
+  * `mount_point`
+    Directory where the volume will be mounted in the system.
+  * `proposed`
+    Default value of the user setting deciding whether this volume should be
+    created or skipped.
+  * `proposed_configurable`
+    Whether the user can change the previous setting in the UI. I.e. whether
+    the user can activate/deactivate the volume. Of course, setting `proposed`
+    to false and `proposed_configurable` also to false has the same effect than
+    deleting the whole `<volume>` entry.
+  * `fs_types`
+    A collection of acceptable file system types. If no list is given, YaST will
+    use a fallback based on the mount point.
+  * `fs_type`
+    Default file system type to format the volume.
+  * `desired_size`
+    Initial size to use in the first proposal attempt.
+  * `min_size`
+    Initial size to use in the second proposal attempt.
+  * `max_size`
+    Maximum size to assign to the volume. It can also contain the value
+    `unlimited` (meaning as big as possible). This will be considered the
+    default value if the option is not present.
+  * `max_size_lvm`
+    When LVM is used, this option can be used to override the value
+    at `max_size`.
+  * `weight`
+    Value used to distribute the extra space (after assigning the
+    initial ones) among the volumes.
+  * `adjust_by_ram`
+    Default value for the user setting deciding whether the initial and max
+    sizes of each attempt should be adjusted based in the RAM size. So far the
+    adaptation consists in ensuring all the sizes are, at least, as big as the
+    RAM. In the future, an extra `adjust_by_ram_mode` option could be added to
+    allow other approaches. Note that this setting has an special behavior for
+    Z Systems. The option to resume from RAM is not available for this kind of
+    systems. And for this reason, in s390 the default value of `adjust_by_ram`
+    is forced to `false` for the swap volume (mount point is "swap"), even when
+    it was set to `true` in the control file.
+  * `adjust_by_ram_configurable`
+    Whether the user can change the previous setting in the UI.
+  * `fallback_for_min_size`
+    Mount point of another volume. If the volume being defined is disabled,
+    the `min_size` of that another volume will be increased by the `min_size` of
+    this disabled volume.
+  * `fallback_for_desired_size`
+    Same than before, but for `desired_size`.
+  * `fallback_for_max_size`
+    Same than before, but for `max_size`.
+  * `fallback_for_max_size_lvm`
+    Same than before, but for `max_size_lvm`.
+  * `fallback_for_weight`
+    Same than before, but for the volume weight.
+  * `separate_vg_name`
+    Name of the separate LVM volume group that will be created to host only this
+    volume when the option separate_vgs is active in the settings.
 
-*path* is the directory path of the subvolume without a starting slash ("/"),
-e.g. `var/cache`. The value of *btrfs_default_subvolume* and a slash are
-prepended, i.e. the result will be something like `@/var/cache`.
+Some options only apply if the chosen filesystem type for the volume is Btrfs.
+In the expert partitioner, if a Btrfs filesystem is created and assigned to the
+mount point of the volume, these settings will also be used to suggest the
+filesystem options.
 
-*copy_on_write* is optional and *true* by default. Specify *false* for NoCOW
-subvolumes. NoCOW is recommended for database directories where a rollback
-together with the rest of the filesystem (in case of a system or kernel update
-that did not quite go as well as expected) is not desired.
+  * `snapshots`
+    Default value for the user setting deciding whether snapshots should be activated.
+  * `snapshots_configurable`
+    Whether the user can change the previous setting in the UI.
+  * `snapshots_size`
+    The initial and maximum sizes for the volume will be increased accordingly
+    if snapshots are being used.
+  * `snapshots_percentage`
+    Like `snapshots_size` but as a percentage of the original sizes
+  * `subvolumes`
+    Optional list of Btrfs subvolumes. If it is missing, a hard-coded list is used
+    for the root filesystem. If the section is there but empty, no subvolumes are
+    created. Each subvolume section has a mandatory `path` and optional `copy_on_write`
+    and `archs` elements.
+  * `btrfs_default_subvolume`
+    The default subvolume is not represented by an entry in the subvolumes list, but
+    with a separate option that specifies only its path. The path of the default
+    subvolume is prepended to the path of all the other subvolumes in the filesystem,
+    no matter if they come from the previous list or are manually added by the user
+    of the partitioner.
+  * `btrfs_read_only`
+    Whether the root subvolume should be mounted read-only in /etc/fstab and
+    its 'ro' Btrfs property should be set to _true_. This works only for Btrfs
+    root filesystems. If another root filesystem type is chosen, this property
+    is ignored. Its default value is _false_.
 
-*archs* is a comma-separated list of system architectures (e.g. i386, x86_64,
-ppc, s390) to which a subvolume is restricted. The default is "all architectures"
-if not specified. Notice that "all" is not a legal value for this element; if a
-subvolume is relevant for all architectures, omit *archs*.
+And finally there is an option that deserves a slightly more detailed
+explanation.
 
-Use an exclamation mark ("!") to exclude the subvolume on an architecture:
+  * `disable_order`
+    Volumes with some value here will be disabled (or snapshots
+    deactivated) if needed to make the initial proposal. See detailed
+    explanation below.
 
-```xml
-<archs>ppc,!board_powernv</archs>
-```
+Before any user interaction, an initial proposal with the default settings is
+calculated. If YaST is not able to make space for all the volumes required by
+those default settings, it will perform new attempts altering the settings. For
+that, it will follow the `disable_order` for each volume with that field.
 
-This means "use for ppc, but not for board_powervr" (board_powervr is a PPC
-with a special board).
+In the first iteration, it will look for the lowest number there. If
+`adjust_by_ram_configurable` is true in that volume, it will disable `adjust_by_ram`. If
+that is not enough and snapshots are optional but enabled, it will disable them
+and try again (assuming Btrfs is being used). If that's still not enough, it
+will disable the whole volume if it's optional.
 
-Normally, architectures are combined with logical OR, i.e.
-
-```xml
-<archs>i386,x86_64</archs>
-```
-
-means "if architecture i386 or x86_64". If the current architecture is an
-architecture that was excluded with "!", that subvolume is not used no matter
-what other architectures are specified that might also apply.
-
-**Example:**
-
-This is the full list of SLE-12 SP2:
-
-```xml
-<subvolumes config:type="list">
-    <subvolume>
-        <path>home</path>
-    </subvolume>
-    <subvolume>
-        <path>opt</path>
-    </subvolume>
-    <subvolume>
-        <path>srv</path>
-    </subvolume>
-    <subvolume>
-        <path>tmp</path>
-    </subvolume>
-    <subvolume>
-        <path>usr/local</path>
-    </subvolume>
-    <subvolume>
-        <path>var/cache</path>
-    </subvolume>
-    <subvolume>
-        <path>var/crash</path>
-    </subvolume>
-    <subvolume>
-        <path>var/lib/libvirt/images</path>
-        <copy_on_write config:type="boolean">false</copy_on_write>
-    </subvolume>
-    <subvolume>
-        <path>var/lib/machines</path>
-    </subvolume>
-    <subvolume>
-        <path>var/lib/mailman</path>
-    </subvolume>
-    <subvolume>
-        <path>var/lib/mariadb</path>
-        <copy_on_write config:type="boolean">false</copy_on_write>
-    </subvolume>
-    <subvolume>
-        <path>var/lib/mysql</path>
-        <copy_on_write config:type="boolean">false</copy_on_write>
-    </subvolume>
-    <subvolume>
-        <path>var/lib/named</path>
-    </subvolume>
-    <subvolume>
-        <path>var/lib/pgsql</path>
-        <copy_on_write config:type="boolean">false</copy_on_write>
-    </subvolume>
-    <subvolume>
-        <path>var/log</path>
-    </subvolume>
-    <subvolume>
-        <path>var/opt</path>
-    </subvolume>
-    <subvolume>
-        <path>var/spool</path>
-    </subvolume>
-    <subvolume>
-        <path>var/tmp</path>
-    </subvolume>
-
-    <!-- architecture specific subvolumes -->
-
-    <subvolume>
-        <path>boot/grub2/i386-pc</path>
-        <archs>i386,x86_64</archs>
-    </subvolume>
-    <subvolume>
-        <path>boot/grub2/x86_64-efi</path>
-        <archs>x86_64</archs>
-    </subvolume>
-    <subvolume>
-        <path>boot/grub2/powerpc-ieee1275</path>
-        <archs>ppc,!board_powernv</archs>
-    </subvolume>
-    <subvolume>
-        <path>boot/grub2/x86_64-efi</path>
-        <archs>x86_64</archs>
-    </subvolume>
-    <subvolume>
-        <path>boot/grub2/s390x-emu</path>
-        <archs>s390</archs>
-    </subvolume>
-</subvolumes>
-```
-
-
+If that's not enough, it will keep those settings and look for the next volume
+with some value in `disable_order` to perform the same operation in a cumulative
+fashion.
 
 ### Self Update
 
@@ -1265,7 +1281,12 @@ section, which defines changes to the existing workflow and proposals.
             <selection_type config:type="symbol">auto</selection_type>
         </software>
         <partitioning>
-            <root_max_size>10G</root_max_size>
+            <volumes config:type="list">
+                <volume>
+                    <mount_point>/</mount_point>
+                    <max_size config:type="disksize">10 GiB</max_size>
+                </volume>
+            </volumes>
         </partitioning>
         <network>
             <force_static_ip config:type="boolean">false</force_static_ip>
